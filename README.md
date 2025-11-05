@@ -24,6 +24,7 @@ npx convex dev
 ```
 
 This will:
+
 - Create a Convex project (if needed)
 - Generate the API types
 - Provide you with `NEXT_PUBLIC_CONVEX_URL`
@@ -87,3 +88,5 @@ Update your GitHub webhook URL to point to your Vercel deployment.
 - **GitHub Webhook** → `/api/webhook/github` → Saves commits to Convex
 - **Convex Actions** → Automatically summarize commits using OpenAI
 - **Frontend** → Displays commits with infinite scroll using Convex queries
+
+TEST
