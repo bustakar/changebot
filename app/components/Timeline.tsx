@@ -1,25 +1,8 @@
 'use client';
 
 import { usePaginatedQuery } from 'convex/react';
-import { useEffect, useRef } from 'react';
-
-// Import with type assertion until Convex types are generated
-function getApi() {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const apiModule = require('../../../convex/_generated/api');
-    return apiModule.api;
-  } catch {
-    // Fallback for build time - return a mock API that will be replaced at runtime
-    return {
-      commitsQuery: {
-        list: () => {},
-      },
-    } as any;
-  }
-}
-
-const api = getApi();
+import { useEffect, useRef, useState } from 'react';
+import { api } from '../../convex/_generated/api';
 
 interface Commit {
   _id: string;
