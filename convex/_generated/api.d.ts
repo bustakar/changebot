@@ -8,6 +8,10 @@
  * @module
  */
 
+import type * as commits from "../commits.js";
+import type * as commitsInternal from "../commitsInternal.js";
+import type * as commitsQuery from "../commitsQuery.js";
+
 import type {
   ApiFromModules,
   FilterApi,
@@ -22,12 +26,20 @@ import type {
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-declare const fullApi: ApiFromModules<{}>;
+declare const fullApi: ApiFromModules<{
+  commits: typeof commits;
+  commitsInternal: typeof commitsInternal;
+  commitsQuery: typeof commitsQuery;
+}>;
+declare const fullApiWithMounts: typeof fullApi;
+
 export declare const api: FilterApi<
-  typeof fullApi,
+  typeof fullApiWithMounts,
   FunctionReference<any, "public">
 >;
 export declare const internal: FilterApi<
-  typeof fullApi,
+  typeof fullApiWithMounts,
   FunctionReference<any, "internal">
 >;
+
+export declare const components: {};

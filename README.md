@@ -1,36 +1,89 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# GitHub Commit Timeline
 
-## Getting Started
+A Next.js + Convex app that displays AI-summarized GitHub commits in an infinite timeline.
 
-First, run the development server:
+## Features
+
+- Listens to GitHub webhooks for commits on the main branch
+- Automatically summarizes commits using AI (GPT-5)
+- Displays commits in an infinite scroll timeline
+- Real-time updates via Convex
+
+## Setup
+
+### 1. Install Dependencies
+
+```bash
+npm install
+```
+
+### 2. Initialize Convex
+
+```bash
+npx convex dev
+```
+
+This will:
+- Create a Convex project (if needed)
+- Generate the API types
+- Provide you with `NEXT_PUBLIC_CONVEX_URL`
+
+### 3. Environment Variables
+
+Create a `.env.local` file with:
+
+```bash
+# Convex Deployment URL (from step 2)
+NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
+
+# OpenAI API Key for AI summarization
+OPENAI_API_KEY=sk-...
+
+# AI Model to use (default: gpt-5)
+AI_MODEL=gpt-5
+
+# GitHub Webhook Secret (optional, for webhook signature verification)
+GITHUB_WEBHOOK_SECRET=your-secret-here
+```
+
+### 4. Deploy Convex Functions
+
+Make sure Convex is running (`npx convex dev`) to push your schema and functions.
+
+### 5. Configure GitHub Webhook
+
+1. Go to your repository: `bustakar/inochi`
+2. Settings → Webhooks → Add webhook
+3. Payload URL: `https://your-domain.com/api/webhook/github`
+4. Content type: `application/json`
+5. Events: Select "Just the push event"
+6. Secret: (optional) Set `GITHUB_WEBHOOK_SECRET` in your environment
+
+### 6. Run Development Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to see the timeline.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deployment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Vercel
 
-## Learn More
+1. Push your code to GitHub
+2. Import project in Vercel
+3. Add environment variables in Vercel dashboard:
+   - `NEXT_PUBLIC_CONVEX_URL`
+   - `OPENAI_API_KEY`
+   - `AI_MODEL` (optional)
+   - `GITHUB_WEBHOOK_SECRET` (optional)
+4. Deploy
 
-To learn more about Next.js, take a look at the following resources:
+Update your GitHub webhook URL to point to your Vercel deployment.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Architecture
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **GitHub Webhook** → `/api/webhook/github` → Saves commits to Convex
+- **Convex Actions** → Automatically summarize commits using OpenAI
+- **Frontend** → Displays commits with infinite scroll using Convex queries
