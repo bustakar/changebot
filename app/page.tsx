@@ -1,6 +1,6 @@
-import { Timeline } from "./components/Timeline";
+import { Timeline } from './components/Timeline';
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 
 export default function Home() {
   return (
