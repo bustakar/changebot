@@ -23,7 +23,8 @@ interface OpenRouterResponse {
 }
 
 async function callOpenRouter(
-  messages: Array<{ role: string; content: string }>
+  messages: Array<{ role: string; content: string }>,
+  maxTokens: number = 150
 ): Promise<OpenRouterResponse> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -42,7 +43,7 @@ async function callOpenRouter(
     body: JSON.stringify({
       model: AI_MODEL,
       messages,
-      max_tokens: 150,
+      max_tokens: maxTokens,
       temperature: 0.7,
     }),
   });
@@ -53,6 +54,88 @@ async function callOpenRouter(
   }
 
   return await response.json();
+}
+
+async function batchSummarizeCommits(
+  commits: Array<{ sha: string; message: string }>
+): Promise<Record<string, string>> {
+  console.log(
+    `[OpenRouter] Batch summarizing ${commits.length} commits in one request`
+  );
+
+  const commitsList = commits
+    .map(
+      (c, idx) =>
+        `${idx + 1}. SHA: ${c.sha.substring(0, 7)}\n   Message: ${c.message}`
+    )
+    .join('\n\n');
+
+  const prompt = `You are a helpful assistant that summarizes git commit messages into clear, human-readable descriptions. Make them concise but informative, focusing on what changed and why it matters.
+
+Please summarize each of the following commits and return a JSON object where:
+- The key is the commit SHA (first 7 characters)
+- The value is a concise summary (1-2 sentences max)
+
+Commits to summarize:
+${commitsList}
+
+Return ONLY a valid JSON object in this format:
+{
+  "sha1": "Summary for commit 1",
+  "sha2": "Summary for commit 2",
+  ...
+}`;
+
+  const startTime = Date.now();
+  const completion = await callOpenRouter(
+    [
+      {
+        role: 'system',
+        content:
+          'You are a helpful assistant that returns only valid JSON. Do not include any explanations or markdown formatting, only the JSON object.',
+      },
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ],
+    2000 // Increased max tokens for batch processing
+  );
+  const duration = Date.now() - startTime;
+
+  console.log('[OpenRouter] Batch API call completed in', duration, 'ms');
+  console.log('[OpenRouter] Response:', {
+    model: completion.model,
+    usage: completion.usage,
+  });
+
+  const summaryText = completion.choices[0]?.message?.content?.trim() || '';
+
+  if (!summaryText) {
+    throw new Error('Empty response returned from OpenRouter');
+  }
+
+  // Parse JSON response (remove markdown code blocks if present)
+  let jsonText = summaryText;
+  if (summaryText.startsWith('```')) {
+    const jsonMatch = summaryText.match(/```(?:json)?\n([\s\S]*?)\n```/);
+    if (jsonMatch) {
+      jsonText = jsonMatch[1];
+    }
+  }
+
+  try {
+    const summaries: Record<string, string> = JSON.parse(jsonText);
+    console.log(
+      `[OpenRouter] Successfully parsed ${Object.keys(summaries).length} summaries`
+    );
+    return summaries;
+  } catch (parseError) {
+    console.error('[OpenRouter] Failed to parse JSON response:', jsonText);
+    throw new Error(
+      `Failed to parse JSON response from OpenRouter: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+    );
+  }
 }
 
 export const saveCommits = action({
@@ -401,49 +484,74 @@ export const regenerateAllCommits = action({
     const commits = await fetchAllCommitsFromGitHub(repository, branch);
     console.log('[Convex] Fetched', commits.length, 'commits from GitHub');
 
-    // Step 3: Save commits and generate summaries
-    console.log('[Convex] Step 3: Saving commits and generating summaries');
+    // Step 3: Generate summaries for all commits in one batch
+    console.log(
+      '[Convex] Step 3: Generating summaries for all commits in batch'
+    );
+    let summaries: Record<string, string> = {};
     const errors: Array<{ sha: string; error: string }> = [];
+
+    if (commits.length > 0) {
+      try {
+        summaries = await batchSummarizeCommits(
+          commits.map((c) => ({ sha: c.sha, message: c.message }))
+        );
+        console.log(
+          `[Convex] Successfully generated ${Object.keys(summaries).length} summaries`
+        );
+      } catch (summaryError) {
+        console.error(
+          '[Convex] Failed to generate batch summaries:',
+          summaryError
+        );
+        errors.push({
+          sha: 'batch',
+          error:
+            summaryError instanceof Error
+              ? summaryError.message
+              : String(summaryError),
+        });
+      }
+    }
+
+    // Step 4: Save commits with summaries
+    console.log('[Convex] Step 4: Saving commits with summaries');
     let saved = 0;
 
     for (const commit of commits) {
       try {
-        // Save commit with pending status
+        const commitShaShort = commit.sha.substring(0, 7);
+        const summary = summaries[commitShaShort];
+
+        // Save commit with summary if available
         const commitId = await ctx.runMutation(
           internal.commitsInternal.insert,
           {
-            ...commit,
-            summaryStatus: 'pending',
+            sha: commit.sha,
+            message: commit.message,
+            author: commit.author,
+            authorEmail: commit.authorEmail,
+            repository: commit.repository,
+            url: commit.url,
+            timestamp: commit.timestamp,
+            summary: summary,
+            summaryStatus: summary ? 'completed' : 'failed',
             createdAt: Date.now(),
           }
         );
 
-        // Generate summary immediately (synchronously for this action)
-        try {
-          const summaryResult = await ctx.runAction(
-            internal.commits.summarizeCommit,
-            {
-              commitId,
-            }
+        if (summary) {
+          saved++;
+          console.log(
+            `[Convex] Saved commit ${commit.sha} with summary (${saved}/${commits.length})`
           );
-
-          if (summaryResult.status === 'completed') {
-            saved++;
-            console.log(
-              `[Convex] Successfully processed commit ${commit.sha} (${saved}/${commits.length})`
-            );
-          }
-        } catch (summaryError) {
-          console.error(
-            `[Convex] Failed to summarize commit ${commit.sha}:`,
-            summaryError
+        } else {
+          console.warn(
+            `[Convex] No summary found for commit ${commit.sha}, saved with failed status`
           );
           errors.push({
             sha: commit.sha,
-            error:
-              summaryError instanceof Error
-                ? summaryError.message
-                : String(summaryError),
+            error: 'Summary not found in batch response',
           });
         }
       } catch (saveError) {
