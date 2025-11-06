@@ -53,6 +53,8 @@ GITHUB_REPOSITORY=owner/repo-name
 GITHUB_WEBHOOK_SECRET=your-secret-here
 ```
 
+**Note:** For the regenerate commits CLI script, you'll also need to set `GITHUB_TOKEN` in your Convex environment (see "Regenerating All Commits" section below).
+
 ### 4. Deploy Convex Functions
 
 Make sure Convex is running (`npx convex dev`) to push your schema and functions.
@@ -73,6 +75,36 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) to see the timeline.
+
+## Regenerating All Commits
+
+You can regenerate all commits from the main branch using the Convex CLI. This will:
+
+1. Delete all existing commits from the database
+2. Fetch all commits from GitHub main branch
+3. Generate summaries for all commits
+
+### Prerequisites
+
+**Convex environment variables** (set via `npx convex env set` or Convex dashboard):
+
+- `GITHUB_TOKEN` - GitHub personal access token (required for fetching commits)
+- `OPENROUTER_API_KEY` - For AI summarization
+- `GITHUB_REPOSITORY` - Repository in format `owner/repo`
+
+### Usage
+
+Simply run the function using the Convex CLI:
+
+```bash
+npx convex run commits:regenerateAllCommits
+```
+
+The function will:
+
+- Use `GITHUB_REPOSITORY` from environment variables
+- Always fetch from the `main` branch
+- Return statistics including number of commits deleted, fetched, saved, and any errors
 
 ## Deployment
 
