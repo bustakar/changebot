@@ -24,41 +24,58 @@ interface OpenRouterResponse {
 
 async function callOpenRouter(
   messages: Array<{ role: string; content: string }>,
-  maxTokens: number = 150
+  maxTokens: number = 150,
+  retries: number = 3
 ): Promise<OpenRouterResponse> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY environment variable is not set');
   }
 
-  const response = await fetch(OPENROUTER_API_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer':
-        process.env.OPENROUTER_HTTP_REFERER || 'https://github.com',
-      'X-Title': 'ChangeBot',
-    },
-    body: JSON.stringify({
-      model: AI_MODEL,
-      messages,
-      max_tokens: maxTokens,
-      temperature: 0.7,
-    }),
-  });
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const response = await fetch(OPENROUTER_API_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer':
+          process.env.OPENROUTER_HTTP_REFERER || 'https://github.com',
+        'X-Title': 'ChangeBot',
+      },
+      body: JSON.stringify({
+        model: AI_MODEL,
+        messages,
+        max_tokens: maxTokens,
+        temperature: 0.7,
+      }),
+    });
 
-  if (!response.ok) {
+    if (response.ok) {
+      return await response.json();
+    }
+
     const errorText = await response.text();
+    const isRateLimit = response.status === 429;
+
+    if (isRateLimit && attempt < retries) {
+      // Exponential backoff: wait 2^attempt seconds (2s, 4s, 8s)
+      const waitTime = Math.pow(2, attempt) * 1000;
+      console.log(
+        `[OpenRouter] Rate limited, retrying in ${waitTime / 1000}s (attempt ${attempt + 1}/${retries + 1})`
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
+      continue;
+    }
+
     throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
   }
 
-  return await response.json();
+  throw new Error('OpenRouter API call failed after retries');
 }
 
 async function batchSummarizeCommits(
   commits: Array<{ sha: string; message: string }>
-): Promise<Record<string, string>> {
+): Promise<Record<string, { title: string; description: string }>> {
   console.log(
     `[OpenRouter] Batch summarizing ${commits.length} commits in one request`
   );
@@ -70,19 +87,35 @@ async function batchSummarizeCommits(
     )
     .join('\n\n');
 
-  const prompt = `You are a helpful assistant that summarizes git commit messages into clear, human-readable descriptions. Make them concise but informative, focusing on what changed and why it matters.
+  const prompt = `You are a helpful assistant that summarizes git commit messages into clear, human-readable formats.
+
+For each commit, create:
+1. A title: A SINGLE LINE, maximum 64 characters, concise and descriptive. NO bullet points, NO dashes, just a plain sentence or phrase.
+2. A description: 2-4 bullet points explaining what changed and why it matters. Each bullet point should be on a new line starting with "- "
+
+IMPORTANT:
+- Title must be a single line without bullet points or dashes
+- Description contains the bullet points
+- Title should be like: "Add user authentication feature"
+- Description should be like: "- Implements login with email/password\\n- Adds JWT token generation\\n- Includes password hashing"
 
 Please summarize each of the following commits and return a JSON object where:
 - The key is the commit SHA (first 7 characters)
-- The value is a concise summary (1-2 sentences max)
+- The value is an object with "title" (single line, max 64 chars, no bullets) and "description" (bullet points, each on a new line starting with "- ")
 
 Commits to summarize:
 ${commitsList}
 
 Return ONLY a valid JSON object in this format:
 {
-  "sha1": "Summary for commit 1",
-  "sha2": "Summary for commit 2",
+  "sha1": {
+    "title": "Add feature X",
+    "description": "- First bullet point\\n- Second bullet point\\n- Third bullet point"
+  },
+  "sha2": {
+    "title": "Fix bug in Y",
+    "description": "- Point one\\n- Point two"
+  },
   ...
 }`;
 
@@ -92,14 +125,14 @@ Return ONLY a valid JSON object in this format:
       {
         role: 'system',
         content:
-          'You are a helpful assistant that returns only valid JSON. Do not include any explanations or markdown formatting, only the JSON object.',
+          'You are a helpful assistant that returns only valid JSON. Do not include any explanations or markdown formatting, only the JSON object. Titles must be single lines without bullet points or dashes, maximum 64 characters. Descriptions contain bullet points.',
       },
       {
         role: 'user',
         content: prompt,
       },
     ],
-    2000 // Increased max tokens for batch processing
+    3000 // Increased max tokens for batch processing with bullet points
   );
   const duration = Date.now() - startTime;
 
@@ -125,7 +158,21 @@ Return ONLY a valid JSON object in this format:
   }
 
   try {
-    const summaries: Record<string, string> = JSON.parse(jsonText);
+    const summaries: Record<string, { title: string; description: string }> =
+      JSON.parse(jsonText);
+
+    // Clean up titles: remove bullet points and dashes, take first line only
+    for (const sha in summaries) {
+      let title = summaries[sha].title;
+      // Remove leading dashes and bullet points
+      title = title.replace(/^[-•]\s*/, '').trim();
+      // Take only the first line
+      title = title.split('\n')[0].trim();
+      // Remove any remaining dashes at the start
+      title = title.replace(/^[-•]\s*/, '').trim();
+      summaries[sha].title = title;
+    }
+
     console.log(
       `[OpenRouter] Successfully parsed ${Object.keys(summaries).length} summaries`
     );
@@ -488,7 +535,7 @@ export const regenerateAllCommits = action({
     console.log(
       '[Convex] Step 3: Generating summaries for all commits in batch'
     );
-    let summaries: Record<string, string> = {};
+    let summaries: Record<string, { title: string; description: string }> = {};
     const errors: Array<{ sha: string; error: string }> = [];
 
     if (commits.length > 0) {
@@ -521,9 +568,9 @@ export const regenerateAllCommits = action({
     for (const commit of commits) {
       try {
         const commitShaShort = commit.sha.substring(0, 7);
-        const summary = summaries[commitShaShort];
+        const summaryData = summaries[commitShaShort];
 
-        // Save commit with summary if available
+        // Save commit with title and summary if available
         const commitId = await ctx.runMutation(
           internal.commitsInternal.insert,
           {
@@ -534,16 +581,17 @@ export const regenerateAllCommits = action({
             repository: commit.repository,
             url: commit.url,
             timestamp: commit.timestamp,
-            summary: summary,
-            summaryStatus: summary ? 'completed' : 'failed',
+            title: summaryData?.title,
+            summary: summaryData?.description,
+            summaryStatus: summaryData ? 'completed' : 'failed',
             createdAt: Date.now(),
           }
         );
 
-        if (summary) {
+        if (summaryData) {
           saved++;
           console.log(
-            `[Convex] Saved commit ${commit.sha} with summary (${saved}/${commits.length})`
+            `[Convex] Saved commit ${commit.sha} with title and summary (${saved}/${commits.length})`
           );
         } else {
           console.warn(

@@ -5,6 +5,7 @@ export default defineSchema({
   commits: defineTable({
     sha: v.string(),
     message: v.string(),
+    title: v.optional(v.string()),
     summary: v.optional(v.string()),
     author: v.string(),
     authorEmail: v.string(),

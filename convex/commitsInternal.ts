@@ -48,6 +48,7 @@ export const insert = internalMutation({
       v.literal('failed')
     ),
     createdAt: v.number(),
+    title: v.optional(v.string()),
     summary: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
