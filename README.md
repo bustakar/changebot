@@ -5,7 +5,7 @@ A Next.js + Convex app that displays AI-summarized GitHub commits in an infinite
 ## Features
 
 - Listens to GitHub webhooks for commits on the main branch
-- Automatically summarizes commits using AI (GPT-5)
+- Automatically summarizes commits using AI (Gemini Flash 2.0 via OpenRouter)
 - Displays commits in an infinite scroll timeline
 - Real-time updates via Convex
 
@@ -37,11 +37,14 @@ Create a `.env.local` file with:
 # Convex Deployment URL (from step 2)
 NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
 
-# OpenAI API Key for AI summarization
-OPENAI_API_KEY=sk-...
+# OpenRouter API Key for AI summarization (get from https://openrouter.ai)
+OPENROUTER_API_KEY=sk-or-v1-...
 
-# AI Model to use (default: gpt-5)
-AI_MODEL=gpt-5
+# AI Model to use (default: google/gemini-flash-2.0)
+AI_MODEL=google/gemini-flash-2.0
+
+# OpenRouter HTTP Referer (optional, for API tracking)
+OPENROUTER_HTTP_REFERER=https://github.com
 
 # GitHub Repository to watch (format: owner/repo-name)
 GITHUB_REPOSITORY=owner/repo-name
@@ -79,8 +82,9 @@ Open [http://localhost:3000](http://localhost:3000) to see the timeline.
 2. Import project in Vercel
 3. Add environment variables in Vercel dashboard:
    - `NEXT_PUBLIC_CONVEX_URL`
-   - `OPENAI_API_KEY`
-   - `AI_MODEL` (optional)
+   - `OPENROUTER_API_KEY`
+   - `AI_MODEL` (optional, default: google/gemini-flash-2.0)
+   - `OPENROUTER_HTTP_REFERER` (optional)
    - `GITHUB_REPOSITORY` (required, format: owner/repo-name)
    - `GITHUB_WEBHOOK_SECRET` (optional)
 4. Deploy
@@ -90,7 +94,7 @@ Update your GitHub webhook URL to point to your Vercel deployment.
 ## Architecture
 
 - **GitHub Webhook** → `/api/webhook/github` → Saves commits to Convex
-- **Convex Actions** → Automatically summarize commits using OpenAI
+- **Convex Actions** → Automatically summarize commits using OpenRouter (Gemini Flash 2.0)
 - **Frontend** → Displays commits with infinite scroll using Convex queries
 
 TEST
