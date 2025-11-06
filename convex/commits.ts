@@ -284,8 +284,12 @@ async function fetchAllCommitsFromGitHub(
   }>
 > {
   const githubToken = process.env.GITHUB_TOKEN;
-  if (!githubToken) {
-    throw new Error('GITHUB_TOKEN environment variable is not set');
+  const isAuthenticated = !!githubToken;
+
+  if (!isAuthenticated) {
+    console.warn(
+      '[GitHub] GITHUB_TOKEN not set. Using unauthenticated requests (60 requests/hour limit).'
+    );
   }
 
   const [owner, repo] = repository.split('/');
@@ -299,21 +303,32 @@ async function fetchAllCommitsFromGitHub(
   let page = 1;
   const perPage = 100;
 
-  console.log(`[GitHub] Fetching commits from ${repository} branch ${branch}`);
+  console.log(
+    `[GitHub] Fetching commits from ${repository} branch ${branch} (${isAuthenticated ? 'authenticated' : 'unauthenticated'})`
+  );
 
   while (true) {
     const url = `https://api.github.com/repos/${owner}/${repo}/commits?sha=${branch}&per_page=${perPage}&page=${page}`;
     console.log(`[GitHub] Fetching page ${page}: ${url}`);
 
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${githubToken}`,
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'ChangeBot',
-      },
-    });
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'ChangeBot',
+    };
+
+    if (githubToken) {
+      headers.Authorization = `Bearer ${githubToken}`;
+    }
+
+    const response = await fetch(url, { headers });
 
     if (!response.ok) {
+      if (response.status === 403 && !isAuthenticated) {
+        const errorText = await response.text();
+        throw new Error(
+          `GitHub API rate limit exceeded. Set GITHUB_TOKEN environment variable for higher rate limits (5,000/hour). Error: ${errorText}`
+        );
+      }
       const errorText = await response.text();
       throw new Error(`GitHub API error: ${response.status} ${errorText}`);
     }

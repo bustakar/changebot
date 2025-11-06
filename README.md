@@ -88,9 +88,11 @@ You can regenerate all commits from the main branch using the Convex CLI. This w
 
 **Convex environment variables** (set via `npx convex env set` or Convex dashboard):
 
-- `GITHUB_TOKEN` - GitHub personal access token (required for fetching commits)
+- `GITHUB_TOKEN` - GitHub personal access token (optional for public repos, but recommended for higher rate limits: 5,000/hour vs 60/hour)
 - `OPENROUTER_API_KEY` - For AI summarization
 - `GITHUB_REPOSITORY` - Repository in format `owner/repo`
+
+**Note:** For public repositories, `GITHUB_TOKEN` is optional. However, without authentication, you're limited to 60 API requests per hour, which may not be enough for repositories with many commits. Setting `GITHUB_TOKEN` increases the limit to 5,000 requests per hour.
 
 ### Usage
 
