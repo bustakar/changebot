@@ -9,8 +9,9 @@ fi
 TAG_SHA=$(git rev-list -n 1 $VERSION)
 TAG_DATE=$(git log -1 --format=%ct $TAG_SHA)
 
-npx convex run releases:syncRelease \
-  --version "$VERSION" \
-  --sha "$TAG_SHA" \
-  --date "$TAG_DATE"
+echo "Syncing release: $VERSION"
+echo "Tag SHA: $TAG_SHA"
+echo "Tag Date: $TAG_DATE"
+
+npx convex run releases:syncRelease "{\"version\":\"$VERSION\",\"sha\":\"$TAG_SHA\",\"date\":$TAG_DATE}"
 

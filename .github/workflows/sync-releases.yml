@@ -35,8 +35,5 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
-          npx convex run releases:syncRelease \
-            --version "${{ steps.tag.outputs.version }}" \
-            --sha "${{ steps.tag.outputs.sha }}" \
-            --date "${{ steps.tag.outputs.date }}"
+          npx convex run releases:syncRelease "{\"version\":\"${{ steps.tag.outputs.version }}\",\"sha\":\"${{ steps.tag.outputs.sha }}\",\"date\":${{ steps.tag.outputs.date }}}"
 
