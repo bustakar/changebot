@@ -11,6 +11,8 @@
 import type * as commits from "../commits.js";
 import type * as commitsInternal from "../commitsInternal.js";
 import type * as commitsQuery from "../commitsQuery.js";
+import type * as releases from "../releases.js";
+import type * as releasesInternal from "../releasesInternal.js";
 
 import type {
   ApiFromModules,
@@ -30,6 +32,8 @@ declare const fullApi: ApiFromModules<{
   commits: typeof commits;
   commitsInternal: typeof commitsInternal;
   commitsQuery: typeof commitsQuery;
+  releases: typeof releases;
+  releasesInternal: typeof releasesInternal;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 
