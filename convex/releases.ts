@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
-import { action, query } from './_generated/server';
+import { action, query, ActionCtx } from './_generated/server';
 import { internal } from './_generated/api';
+import { Doc, Id } from './_generated/dataModel';
 
 interface GitHubCommit {
   sha: string;
@@ -12,7 +13,7 @@ interface GitHubCommit {
   };
 }
 
-async function fetchTagCommit(sha: string, repository: string) {
+async function fetchTagCommit(sha: string, repository: string): Promise<GitHubCommit> {
   const [owner, repo] = repository.split('/');
   const token = process.env.GITHUB_TOKEN;
 
@@ -37,10 +38,10 @@ async function fetchTagCommit(sha: string, repository: string) {
 }
 
 async function getCommitsBetweenTags(
-  ctx: any,
+  ctx: ActionCtx,
   currentTagSha: string,
   repository: string
-) {
+): Promise<Doc<'commits'>[]> {
   // Get all commits from the database
   const allCommits = await ctx.runQuery(
     internal.releasesInternal.getCommitsByRepository,
@@ -70,7 +71,7 @@ async function getCommitsBetweenTags(
 
   // Filter commits between previous release and current tag
   return allCommits.filter(
-    (c: any) => c.timestamp > previousDate && c.timestamp <= tagDate
+    (c) => c.timestamp > previousDate && c.timestamp <= tagDate
   );
 }
 
@@ -80,7 +81,7 @@ export const syncRelease = action({
     sha: v.string(),
     date: v.number(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ releaseId: Id<'releases'>; commitCount: number }> => {
     const repository = process.env.GITHUB_REPOSITORY;
     if (!repository) {
       throw new Error('GITHUB_REPOSITORY not set');
@@ -90,7 +91,7 @@ export const syncRelease = action({
     const commits = await getCommitsBetweenTags(ctx, args.sha, repository);
 
     // Create release record
-    const releaseId = await ctx.runMutation(
+    const releaseId: Id<'releases'> = await ctx.runMutation(
       internal.releasesInternal.createRelease,
       {
         version: args.version,
