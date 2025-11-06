@@ -40,19 +40,56 @@ async function fetchTagCommit(
   return await response.json();
 }
 
+async function fetchCommitsBetweenTags(
+  previousTagSha: string | null,
+  currentTagSha: string,
+  repository: string
+): Promise<string[]> {
+  const [owner, repo] = repository.split('/');
+  const token = process.env.GITHUB_TOKEN;
+
+  // Use GitHub compare API to get commits between tags
+  // If no previous tag, compare from the beginning
+  const base = previousTagSha || '';
+  const head = currentTagSha;
+
+  const compareUrl = base
+    ? `https://api.github.com/repos/${owner}/${repo}/compare/${base}...${head}`
+    : `https://api.github.com/repos/${owner}/${repo}/commits?sha=${head}`;
+
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'ChangeBot',
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(compareUrl, { headers });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`GitHub API error: ${response.status} ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  // Extract commit SHAs from the response
+  if (base) {
+    // Compare API returns commits array
+    return (data.commits || []).map((commit: any) => commit.sha);
+  } else {
+    // Commits API returns array of commits
+    return (data || []).map((commit: any) => commit.sha);
+  }
+}
+
 async function getCommitsBetweenTags(
   ctx: ActionCtx,
   currentTagSha: string,
   repository: string
 ): Promise<Doc<'commits'>[]> {
-  // Get all commits from the database
-  const allCommits = await ctx.runQuery(
-    internal.releasesInternal.getCommitsByRepository,
-    {
-      repository,
-    }
-  );
-
   // Get all releases to find the previous one
   const releases = await ctx.runQuery(
     internal.releasesInternal.getReleasesByRepository,
@@ -61,21 +98,33 @@ async function getCommitsBetweenTags(
     }
   );
 
-  // Fetch the tag commit to get its timestamp
-  const tagCommit = await fetchTagCommit(currentTagSha, repository);
-  const tagDate = new Date(tagCommit.commit.author.date).getTime();
-
-  // Find previous release to get date range
+  // Find previous release
   const sortedReleases = releases.sort((a, b) => b.date - a.date);
   const previousRelease = sortedReleases.find(
     (r) => r.tagSha !== currentTagSha
   );
-  const previousDate = previousRelease?.date || 0;
+  const previousTagSha = previousRelease?.tagSha || null;
 
-  // Filter commits between previous release and current tag
-  // Exclude commits that already have a version assigned
+  // Fetch commit SHAs between tags from GitHub
+  const commitShas = await fetchCommitsBetweenTags(
+    previousTagSha,
+    currentTagSha,
+    repository
+  );
+
+  // Get all commits from the database
+  const allCommits = await ctx.runQuery(
+    internal.releasesInternal.getCommitsByRepository,
+    {
+      repository,
+    }
+  );
+
+  // Match GitHub commit SHAs with database commits
+  // Only include commits that haven't been assigned to a version yet
+  const commitShaSet = new Set(commitShas);
   return allCommits.filter(
-    (c) => c.timestamp > previousDate && c.timestamp <= tagDate && !c.version // Only include commits that haven't been assigned to a version yet
+    (c) => commitShaSet.has(c.sha) && !c.version
   );
 }
 
