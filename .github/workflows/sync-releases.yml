@@ -1,0 +1,42 @@
+name: Sync Releases
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags
+
+jobs:
+  sync-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for changelog
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Get tag info
+        id: tag
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          TAG_SHA=$(git rev-list -n 1 $TAG_NAME)
+          TAG_DATE=$(git log -1 --format=%ct $TAG_SHA)
+          echo "version=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "sha=$TAG_SHA" >> $GITHUB_OUTPUT
+          echo "date=$TAG_DATE" >> $GITHUB_OUTPUT
+
+      - name: Sync to Convex
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          npx convex run releases:syncRelease \
+            --version "${{ steps.tag.outputs.version }}" \
+            --sha "${{ steps.tag.outputs.sha }}" \
+            --date "${{ steps.tag.outputs.date }}"
+
