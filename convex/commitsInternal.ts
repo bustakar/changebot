@@ -75,3 +75,19 @@ export const updateSummary = internalMutation({
   },
 });
 
+export const deleteAll = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    console.log('[Convex] deleteAll called - deleting all commits');
+    const commits = await ctx.db.query("commits").collect();
+    console.log('[Convex] Found', commits.length, 'commits to delete');
+    
+    for (const commit of commits) {
+      await ctx.db.delete(commit._id);
+    }
+    
+    console.log('[Convex] deleteAll completed - deleted', commits.length, 'commits');
+    return { deleted: commits.length };
+  },
+});
+

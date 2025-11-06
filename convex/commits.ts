@@ -252,3 +252,210 @@ export const summarizeCommit = internalAction({
     }
   },
 });
+
+interface GitHubCommit {
+  sha: string;
+  commit: {
+    message: string;
+    author: {
+      name: string;
+      email: string;
+      date: string;
+    };
+  };
+  author: {
+    login: string;
+  } | null;
+  html_url: string;
+}
+
+async function fetchAllCommitsFromGitHub(
+  repository: string,
+  branch: string = 'main'
+): Promise<
+  Array<{
+    sha: string;
+    message: string;
+    author: string;
+    authorEmail: string;
+    repository: string;
+    url: string;
+    timestamp: number;
+  }>
+> {
+  const githubToken = process.env.GITHUB_TOKEN;
+  if (!githubToken) {
+    throw new Error('GITHUB_TOKEN environment variable is not set');
+  }
+
+  const [owner, repo] = repository.split('/');
+  if (!owner || !repo) {
+    throw new Error(
+      `Invalid repository format: ${repository}. Expected format: owner/repo`
+    );
+  }
+
+  const allCommits: GitHubCommit[] = [];
+  let page = 1;
+  const perPage = 100;
+
+  console.log(`[GitHub] Fetching commits from ${repository} branch ${branch}`);
+
+  while (true) {
+    const url = `https://api.github.com/repos/${owner}/${repo}/commits?sha=${branch}&per_page=${perPage}&page=${page}`;
+    console.log(`[GitHub] Fetching page ${page}: ${url}`);
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${githubToken}`,
+        Accept: 'application/vnd.github.v3+json',
+        'User-Agent': 'ChangeBot',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`GitHub API error: ${response.status} ${errorText}`);
+    }
+
+    const commits: GitHubCommit[] = await response.json();
+
+    if (commits.length === 0) {
+      console.log(`[GitHub] No more commits on page ${page}`);
+      break;
+    }
+
+    allCommits.push(...commits);
+    console.log(
+      `[GitHub] Fetched ${commits.length} commits from page ${page} (total: ${allCommits.length})`
+    );
+
+    // If we got fewer than perPage commits, we've reached the end
+    if (commits.length < perPage) {
+      break;
+    }
+
+    page++;
+  }
+
+  console.log(`[GitHub] Total commits fetched: ${allCommits.length}`);
+
+  // Transform GitHub commits to our format
+  return allCommits.map((commit) => ({
+    sha: commit.sha,
+    message: commit.commit.message,
+    author: commit.commit.author.name,
+    authorEmail: commit.commit.author.email,
+    repository: repository,
+    url: commit.html_url,
+    timestamp: new Date(commit.commit.author.date).getTime(),
+  }));
+}
+
+export const regenerateAllCommits = action({
+  args: {},
+  handler: async (
+    ctx
+  ): Promise<{
+    deleted: number;
+    fetched: number;
+    saved: number;
+    errors: Array<{ sha: string; error: string }>;
+  }> => {
+    const repository = process.env.GITHUB_REPOSITORY;
+    const branch = 'main';
+
+    if (!repository) {
+      throw new Error('GITHUB_REPOSITORY environment variable is not set');
+    }
+
+    console.log('[Convex] regenerateAllCommits called:', {
+      repository,
+      branch,
+    });
+
+    // Step 1: Delete all existing commits
+    console.log('[Convex] Step 1: Deleting all existing commits');
+    const deleteResult = await ctx.runMutation(
+      internal.commitsInternal.deleteAll
+    );
+    console.log('[Convex] Deleted', deleteResult.deleted, 'commits');
+
+    // Step 2: Fetch all commits from GitHub
+    console.log('[Convex] Step 2: Fetching all commits from GitHub');
+    const commits = await fetchAllCommitsFromGitHub(repository, branch);
+    console.log('[Convex] Fetched', commits.length, 'commits from GitHub');
+
+    // Step 3: Save commits and generate summaries
+    console.log('[Convex] Step 3: Saving commits and generating summaries');
+    const errors: Array<{ sha: string; error: string }> = [];
+    let saved = 0;
+
+    for (const commit of commits) {
+      try {
+        // Save commit with pending status
+        const commitId = await ctx.runMutation(
+          internal.commitsInternal.insert,
+          {
+            ...commit,
+            summaryStatus: 'pending',
+            createdAt: Date.now(),
+          }
+        );
+
+        // Generate summary immediately (synchronously for this action)
+        try {
+          const summaryResult = await ctx.runAction(
+            internal.commits.summarizeCommit,
+            {
+              commitId,
+            }
+          );
+
+          if (summaryResult.status === 'completed') {
+            saved++;
+            console.log(
+              `[Convex] Successfully processed commit ${commit.sha} (${saved}/${commits.length})`
+            );
+          }
+        } catch (summaryError) {
+          console.error(
+            `[Convex] Failed to summarize commit ${commit.sha}:`,
+            summaryError
+          );
+          errors.push({
+            sha: commit.sha,
+            error:
+              summaryError instanceof Error
+                ? summaryError.message
+                : String(summaryError),
+          });
+        }
+      } catch (saveError) {
+        console.error(
+          `[Convex] Failed to save commit ${commit.sha}:`,
+          saveError
+        );
+        errors.push({
+          sha: commit.sha,
+          error:
+            saveError instanceof Error ? saveError.message : String(saveError),
+        });
+      }
+    }
+
+    console.log('[Convex] regenerateAllCommits completed:', {
+      deleted: deleteResult.deleted,
+      fetched: commits.length,
+      saved,
+      errors: errors.length,
+    });
+
+    return {
+      deleted: deleteResult.deleted,
+      fetched: commits.length,
+      saved,
+      errors,
+    };
+  },
+});
