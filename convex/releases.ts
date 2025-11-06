@@ -1,7 +1,7 @@
 import { v } from 'convex/values';
-import { action, query, ActionCtx } from './_generated/server';
 import { internal } from './_generated/api';
 import { Doc, Id } from './_generated/dataModel';
+import { action, ActionCtx, query } from './_generated/server';
 
 interface GitHubCommit {
   sha: string;
@@ -13,7 +13,10 @@ interface GitHubCommit {
   };
 }
 
-async function fetchTagCommit(sha: string, repository: string): Promise<GitHubCommit> {
+async function fetchTagCommit(
+  sha: string,
+  repository: string
+): Promise<GitHubCommit> {
   const [owner, repo] = repository.split('/');
   const token = process.env.GITHUB_TOKEN;
 
@@ -70,8 +73,9 @@ async function getCommitsBetweenTags(
   const previousDate = previousRelease?.date || 0;
 
   // Filter commits between previous release and current tag
+  // Exclude commits that already have a version assigned
   return allCommits.filter(
-    (c) => c.timestamp > previousDate && c.timestamp <= tagDate
+    (c) => c.timestamp > previousDate && c.timestamp <= tagDate && !c.version // Only include commits that haven't been assigned to a version yet
   );
 }
 
@@ -81,7 +85,10 @@ export const syncRelease = action({
     sha: v.string(),
     date: v.number(),
   },
-  handler: async (ctx, args): Promise<{ releaseId: Id<'releases'>; commitCount: number }> => {
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ releaseId: Id<'releases'>; commitCount: number }> => {
     const repository = process.env.GITHUB_REPOSITORY;
     if (!repository) {
       throw new Error('GITHUB_REPOSITORY not set');
@@ -102,14 +109,11 @@ export const syncRelease = action({
     );
 
     // Link commits to this version
-    await ctx.runMutation(
-      internal.releasesInternal.linkCommitsToVersion,
-      {
-        version: args.version,
-        commitShas: commits.map((c) => c.sha),
-        repository,
-      }
-    );
+    await ctx.runMutation(internal.releasesInternal.linkCommitsToVersion, {
+      version: args.version,
+      commitShas: commits.map((c) => c.sha),
+      repository,
+    });
 
     return { releaseId, commitCount: commits.length };
   },
@@ -155,4 +159,3 @@ export const getReleases = query({
     return releasesWithCommits;
   },
 });
-
