@@ -13,15 +13,41 @@ jobs:
         with:
           fetch-depth: 0 # Fetch all history for changelog
 
+      - name: Check if tag is on main branch
+        id: check_branch
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          TAG_SHA=$(git rev-list -n 1 $TAG_NAME)
+          
+          # Fetch main branch to check against
+          git fetch origin main:main 2>/dev/null || git fetch origin main 2>/dev/null || true
+          
+          # Check if the tag's commit is on main branch
+          # Method 1: Check if commit is reachable from main
+          if git merge-base --is-ancestor $TAG_SHA origin/main 2>/dev/null; then
+            echo "on_main=true" >> $GITHUB_OUTPUT
+            echo "Tag $TAG_NAME points to a commit on main branch"
+          # Method 2: Check if main branch contains this commit
+          elif git branch -r --contains $TAG_SHA 2>/dev/null | grep -q "origin/main"; then
+            echo "on_main=true" >> $GITHUB_OUTPUT
+            echo "Tag $TAG_NAME points to a commit on main branch"
+          else
+            echo "on_main=false" >> $GITHUB_OUTPUT
+            echo "Tag $TAG_NAME does not point to a commit on main branch, skipping"
+          fi
+
       - name: Setup Node.js
+        if: steps.check_branch.outputs.on_main == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install dependencies
+        if: steps.check_branch.outputs.on_main == 'true'
         run: npm ci
 
       - name: Get tag info
+        if: steps.check_branch.outputs.on_main == 'true'
         id: tag
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
@@ -32,6 +58,7 @@ jobs:
           echo "date=$TAG_DATE" >> $GITHUB_OUTPUT
 
       - name: Sync to Convex
+        if: steps.check_branch.outputs.on_main == 'true'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
