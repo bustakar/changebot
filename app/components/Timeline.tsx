@@ -9,6 +9,7 @@ interface Commit {
   _creationTime: number;
   sha: string;
   message: string;
+  title?: string;
   summary?: string;
   author: string;
   authorEmail: string;
@@ -31,19 +32,49 @@ function formatDate(timestamp: number): string {
 }
 
 function CommitCard({ commit }: { commit: Commit }) {
+  // Clean up title: remove bullet points, dashes, and take first line only
+  let displayTitle = commit.title || commit.message;
+  if (displayTitle) {
+    // Remove leading dashes and bullet points
+    displayTitle = displayTitle.replace(/^[-•]\s*/, '').trim();
+    // Take only the first line
+    displayTitle = displayTitle.split('\n')[0].trim();
+    // Remove any remaining dashes at the start
+    displayTitle = displayTitle.replace(/^[-•]\s*/, '').trim();
+  }
+
+  // Parse bullet points from summary
+  const bulletPoints = commit.summary
+    ? commit.summary
+        .split('\n')
+        .filter((line) => line.trim().startsWith('-'))
+        .map((line) => line.trim().substring(1).trim())
+    : [];
+
   return (
     <div className="border-l-2 border-gray-200 pl-6 pb-8 relative">
       <div className="absolute -left-1.5 top-0 w-3 h-3 bg-blue-500 rounded-full"></div>
-      <div className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex-1">
+      <div className="flex flex-col gap-2">
+        <time
+          dateTime={new Date(commit.timestamp).toISOString()}
+          className="text-xs text-gray-500 whitespace-nowrap"
+        >
+          {formatDate(commit.timestamp)}
+        </time>
+        <div className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+          <div className="mb-2">
             <h3 className="text-sm font-semibold text-gray-900 mb-1">
-              {commit.summary || commit.message}
+              {displayTitle}
             </h3>
-            {commit.summary && (
-              <p className="text-xs text-gray-500 mb-2 line-clamp-2">
-                {commit.message}
-              </p>
+            {bulletPoints.length > 0 && (
+              <ul className="text-xs text-gray-600 space-y-1 mb-2">
+                {bulletPoints.map((point, idx) => (
+                  <li key={idx} className="flex items-start">
+                    <span className="mr-2">•</span>
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
             )}
             {commit.summaryStatus === 'pending' && (
               <p className="text-xs text-gray-400 italic">Summarizing...</p>
@@ -54,9 +85,7 @@ function CommitCard({ commit }: { commit: Commit }) {
               </p>
             )}
           </div>
-        </div>
-        <div className="flex items-center justify-between text-xs text-gray-500">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 text-xs text-gray-500">
             <span className="font-medium">{commit.author}</span>
             <span>•</span>
             <a
@@ -68,9 +97,6 @@ function CommitCard({ commit }: { commit: Commit }) {
               {commit.sha.substring(0, 7)}
             </a>
           </div>
-          <time dateTime={new Date(commit.timestamp).toISOString()}>
-            {formatDate(commit.timestamp)}
-          </time>
         </div>
       </div>
     </div>
