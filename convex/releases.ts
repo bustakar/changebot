@@ -70,8 +70,12 @@ async function getCommitsBetweenTags(
   const previousDate = previousRelease?.date || 0;
 
   // Filter commits between previous release and current tag
+  // Exclude commits that already have a version assigned
   return allCommits.filter(
-    (c) => c.timestamp > previousDate && c.timestamp <= tagDate
+    (c) =>
+      c.timestamp > previousDate &&
+      c.timestamp <= tagDate &&
+      !c.version // Only include commits that haven't been assigned to a version yet
   );
 }
 
