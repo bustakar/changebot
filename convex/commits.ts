@@ -39,6 +39,7 @@ export const saveCommits = action({
       commitId?: Id<'commits'>;
     }>
   > => {
+    console.log('[Convex] saveCommits called with', args.commits.length, 'commits');
     const results: Array<{
       sha: string;
       status: string;
@@ -47,6 +48,8 @@ export const saveCommits = action({
     }> = [];
 
     for (const commit of args.commits) {
+      console.log('[Convex] Processing commit:', commit.sha, 'from', commit.repository);
+      
       // Check if commit already exists
       const existing = await ctx.runQuery(internal.commitsInternal.findBySha, {
         sha: commit.sha,
@@ -54,6 +57,7 @@ export const saveCommits = action({
       });
 
       if (existing) {
+        console.log('[Convex] Commit already exists, skipping:', commit.sha);
         results.push({
           sha: commit.sha,
           status: 'skipped',
@@ -63,6 +67,7 @@ export const saveCommits = action({
       }
 
       // Save commit with pending status
+      console.log('[Convex] Saving new commit:', commit.sha);
       const commitId: Id<'commits'> = await ctx.runMutation(
         internal.commitsInternal.insert,
         {
@@ -71,8 +76,10 @@ export const saveCommits = action({
           createdAt: Date.now(),
         }
       );
+      console.log('[Convex] Commit saved with ID:', commitId);
 
       // Trigger summarization asynchronously
+      console.log('[Convex] Scheduling summarization for commit:', commitId);
       await ctx.scheduler.runAfter(0, internal.commits.summarizeCommit, {
         commitId,
       });
@@ -80,6 +87,11 @@ export const saveCommits = action({
       results.push({ sha: commit.sha, status: 'saved', commitId });
     }
 
+    console.log('[Convex] saveCommits completed:', {
+      total: args.commits.length,
+      saved: results.filter(r => r.status === 'saved').length,
+      skipped: results.filter(r => r.status === 'skipped').length,
+    });
     return results;
   },
 });
@@ -89,24 +101,38 @@ export const summarizeCommit = internalAction({
     commitId: v.id('commits'),
   },
   handler: async (ctx, args): Promise<{ status: string; summary?: string }> => {
+    console.log('[Convex] summarizeCommit called for commitId:', args.commitId);
+    
     // Get the commit
     const commit = await ctx.runQuery(internal.commitsInternal.getById, {
       commitId: args.commitId,
     });
 
     if (!commit) {
+      console.error('[Convex] Commit not found:', args.commitId);
       throw new Error(`Commit ${args.commitId} not found`);
     }
 
+    console.log('[Convex] Commit found:', {
+      sha: commit.sha,
+      repository: commit.repository,
+      summaryStatus: commit.summaryStatus,
+      messagePreview: commit.message.substring(0, 50) + '...',
+    });
+
     if (commit.summaryStatus === 'completed') {
+      console.log('[Convex] Commit already summarized, skipping:', args.commitId);
       return { status: 'already_completed' };
     }
 
     try {
       // Initialize OpenAI client lazily
+      console.log('[OpenAI] Initializing OpenAI client with model:', AI_MODEL);
       const openai = getOpenAIClient();
 
       // Call OpenAI to summarize
+      console.log('[OpenAI] Calling OpenAI API to summarize commit:', commit.sha);
+      const startTime = Date.now();
       const completion = await openai.chat.completions.create({
         model: AI_MODEL,
         reasoning_effort: 'low',
@@ -124,23 +150,38 @@ export const summarizeCommit = internalAction({
         max_tokens: 150,
         temperature: 0.7,
       });
+      const duration = Date.now() - startTime;
+      
+      console.log('[OpenAI] API call completed in', duration, 'ms');
+      console.log('[OpenAI] Response:', {
+        model: completion.model,
+        usage: completion.usage,
+        choicesCount: completion.choices.length,
+      });
 
       const summary: string =
         completion.choices[0]?.message?.content?.trim() || '';
 
       if (!summary) {
+        console.error('[OpenAI] Empty summary returned from OpenAI');
         throw new Error('Empty summary returned from OpenAI');
       }
 
+      console.log('[OpenAI] Summary generated:', summary.substring(0, 100) + '...');
+
       // Update commit with summary
+      console.log('[Convex] Updating commit with summary:', args.commitId);
       await ctx.runMutation(internal.commitsInternal.updateSummary, {
         commitId: args.commitId,
         summary,
         summaryStatus: 'completed',
       });
 
+      console.log('[Convex] Commit summarization completed successfully:', args.commitId);
       return { status: 'completed', summary };
     } catch (error) {
+      console.error('[Convex] Failed to summarize commit:', args.commitId, error);
+      
       // Update commit with failed status
       await ctx.runMutation(internal.commitsInternal.updateSummary, {
         commitId: args.commitId,
@@ -148,7 +189,7 @@ export const summarizeCommit = internalAction({
         summaryStatus: 'failed',
       });
 
-      console.error(`Failed to summarize commit ${args.commitId}:`, error);
+      console.error(`[Convex] Commit marked as failed: ${args.commitId}`);
       throw error;
     }
   },

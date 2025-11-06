@@ -7,11 +7,14 @@ export const findBySha = internalQuery({
     repository: v.string(),
   },
   handler: async (ctx, args) => {
-    return await ctx.db
+    console.log('[Convex] findBySha called:', { sha: args.sha, repository: args.repository });
+    const result = await ctx.db
       .query("commits")
       .withIndex("by_repository", (q) => q.eq("repository", args.repository))
       .filter((q) => q.eq(q.field("sha"), args.sha))
       .first();
+    console.log('[Convex] findBySha result:', result ? 'found' : 'not found');
+    return result;
   },
 });
 
@@ -20,7 +23,10 @@ export const getById = internalQuery({
     commitId: v.id("commits"),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.commitId);
+    console.log('[Convex] getById called:', args.commitId);
+    const result = await ctx.db.get(args.commitId);
+    console.log('[Convex] getById result:', result ? 'found' : 'not found');
+    return result;
   },
 });
 
@@ -37,7 +43,10 @@ export const insert = internalMutation({
     createdAt: v.number(),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("commits", args);
+    console.log('[Convex] insert called:', { sha: args.sha, repository: args.repository, summaryStatus: args.summaryStatus });
+    const result = await ctx.db.insert("commits", args);
+    console.log('[Convex] insert completed, commitId:', result);
+    return result;
   },
 });
 
@@ -49,6 +58,12 @@ export const updateSummary = internalMutation({
   },
   handler: async (ctx, args) => {
     const { commitId, summary, summaryStatus } = args;
+    console.log('[Convex] updateSummary called:', {
+      commitId,
+      summaryStatus,
+      hasSummary: summary !== undefined,
+      summaryLength: summary?.length || 0,
+    });
     const update: { summaryStatus: typeof summaryStatus; summary?: string } = {
       summaryStatus,
     };
@@ -56,6 +71,7 @@ export const updateSummary = internalMutation({
       update.summary = summary;
     }
     await ctx.db.patch(commitId, update);
+    console.log('[Convex] updateSummary completed:', commitId);
   },
 });
 
