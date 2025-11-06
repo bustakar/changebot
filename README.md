@@ -43,6 +43,9 @@ OPENAI_API_KEY=sk-...
 # AI Model to use (default: gpt-5)
 AI_MODEL=gpt-5
 
+# GitHub Repository to watch (format: owner/repo-name)
+GITHUB_REPOSITORY=owner/repo-name
+
 # GitHub Webhook Secret (optional, for webhook signature verification)
 GITHUB_WEBHOOK_SECRET=your-secret-here
 ```
@@ -53,7 +56,7 @@ Make sure Convex is running (`npx convex dev`) to push your schema and functions
 
 ### 5. Configure GitHub Webhook
 
-1. Go to your repository: `bustakar/inochi`
+1. Go to your repository (the one you set in `GITHUB_REPOSITORY`)
 2. Settings → Webhooks → Add webhook
 3. Payload URL: `https://your-domain.com/api/webhook/github`
 4. Content type: `application/json`
@@ -78,6 +81,7 @@ Open [http://localhost:3000](http://localhost:3000) to see the timeline.
    - `NEXT_PUBLIC_CONVEX_URL`
    - `OPENAI_API_KEY`
    - `AI_MODEL` (optional)
+   - `GITHUB_REPOSITORY` (required, format: owner/repo-name)
    - `GITHUB_WEBHOOK_SECRET` (optional)
 4. Deploy
 

@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
-import { ConvexHttpClient } from "convex/browser";
-import { api } from "../../../../convex/_generated/api";
-import crypto from "crypto";
+import { ConvexHttpClient } from 'convex/browser';
+import crypto from 'crypto';
+import { NextRequest, NextResponse } from 'next/server';
+import { api } from '../../../../convex/_generated/api';
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
@@ -14,20 +14,20 @@ function verifySignature(
     return true; // Skip verification if secret not configured
   }
 
-  const hmac = crypto.createHmac("sha256", secret);
-  const digest = "sha256=" + hmac.update(payload).digest("hex");
+  const hmac = crypto.createHmac('sha256', secret);
+  const digest = 'sha256=' + hmac.update(payload).digest('hex');
   return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text();
-    const signature = request.headers.get("x-hub-signature-256");
+    const signature = request.headers.get('x-hub-signature-256');
 
     // Verify webhook signature if secret is configured
     const secret = process.env.GITHUB_WEBHOOK_SECRET;
     if (!verifySignature(body, signature, secret)) {
-      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
     const payload = JSON.parse(body);
@@ -35,19 +35,32 @@ export async function POST(request: NextRequest) {
     // Only process push events
     if (payload.action !== undefined || payload.zen !== undefined) {
       // This is a ping or other event, ignore
-      return NextResponse.json({ message: "Event ignored" }, { status: 200 });
+      return NextResponse.json({ message: 'Event ignored' }, { status: 200 });
     }
 
     // Check if this is a push event
     if (!payload.ref || !payload.commits) {
-      return NextResponse.json({ message: "Not a push event" }, { status: 200 });
+      return NextResponse.json(
+        { message: 'Not a push event' },
+        { status: 200 }
+      );
     }
 
-    // Filter for main branch and bustakar/inochi repository
+    // Filter for main branch and configured repository
     const ref = payload.ref;
-    const isMainBranch = ref === "refs/heads/main" || ref === "refs/heads/master";
-    const repository = payload.repository?.full_name || "";
-    const isTargetRepo = repository === "bustakar/inochi";
+    const isMainBranch =
+      ref === 'refs/heads/main' || ref === 'refs/heads/master';
+    const repository = payload.repository?.full_name || '';
+    const targetRepo = process.env.GITHUB_REPOSITORY;
+
+    if (!targetRepo) {
+      return NextResponse.json(
+        { error: 'GITHUB_REPOSITORY environment variable not configured' },
+        { status: 500 }
+      );
+    }
+
+    const isTargetRepo = repository === targetRepo;
 
     if (!isMainBranch || !isTargetRepo) {
       return NextResponse.json(
@@ -70,28 +83,24 @@ export async function POST(request: NextRequest) {
       }));
 
     if (commits.length === 0) {
-      return NextResponse.json({ message: "No new commits" }, { status: 200 });
+      return NextResponse.json({ message: 'No new commits' }, { status: 200 });
     }
 
     // Save commits to Convex
-    const result = await convex.action(
-      (api as any).commits.saveCommits,
-      {
-        commits,
-      }
-    );
+    const result = await convex.action((api as any).commits.saveCommits, {
+      commits,
+    });
 
     return NextResponse.json({
-      message: "Commits processed",
+      message: 'Commits processed',
       processed: result.length,
       results: result,
     });
   } catch (error) {
-    console.error("Webhook error:", error);
+    console.error('Webhook error:', error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }
 }
-
